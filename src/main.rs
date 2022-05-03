@@ -4,18 +4,22 @@ use arboard::Clipboard;
 use serde_json::Value;
 use clap::Parser;
 mod lex;
+mod phon;
 
 #[derive(Parser)]
 struct Cli {
   #[clap(short,long)]
+  verbose: bool,
+  #[clap(short,long)]
   graphical: bool,
+  #[clap(long)]
+  tex: bool,
   #[clap(parse(from_os_str))]
   path: PathBuf,
   pattern: Vec<String>,
 }
 
-fn do_thing(frame : &mut Frame) -> Result<()> {
-    let f = File::open("sample.txt")?;
+fn do_thing(frame : &mut Frame) -> Result<()> { let f = File::open("sample.txt")?;
     let mut reader = BufReader::new(f);
     let mut buffer = String::new();
     let _ = reader.read_line(&mut buffer)?;
@@ -48,8 +52,30 @@ fn main() -> Result<()> {
             }
             ws.push(w);
         }
-        println!("{} {}",lex::inflect(&ws[0]),lex::inflect(&ws[1]));
-        println!("{} {}",lex::gloss(&ws[0]),lex::gloss(&ws[1]));
+        let mut inflections = Vec::new();
+        let mut orthog = Vec::new();
+        let mut ipa = Vec::new();
+        let mut glosses = Vec::new();
+        for w in &ws {
+            inflections.push(lex::inflect(w));
+            let orth = phon::to_orthography(inflections[inflections.len()-1].clone(),&json["sc"],&json["cats"],args.verbose);
+            orthog.push(orth);
+            ipa.push(phon::to_orthography(orthog[orthog.len()-1].clone(),&json["ipa"],&json["cats"],args.verbose));
+            glosses.push(lex::gloss(w));
+        }
+        if args.tex {
+            println!("\\begin{{tabular}}{{{}}}","l".repeat(inflections.len()));
+            println!("\\textbf{{{}}}\\\\",orthog.join("}&\\textbf{"));
+            println!("/\\textipa{{{}}}/\\\\",ipa.join("}&\\textipa{"));
+            println!("{}\\\\",inflections.join("&"));
+            println!("{}\\\\",glosses.join("&"));
+            println!("\\end{{tabular}}",);
+        } else {
+            println!("{}",inflections.join("\t"));
+            println!("{}",orthog.join("\t"));
+            println!("{}",ipa.join("\t"));
+            println!("{}",glosses.join("\t"));
+        }
         return Ok(())
     }
     let app = app::App::default();

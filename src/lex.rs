@@ -1,14 +1,14 @@
-use std::{cmp::Ordering,io::Result,io::Error,collections::hash_set::HashSet};
+use std::{cmp::Ordering,io::Result,io::Error,collections::hash_set::HashSet,fmt::Display};
 use serde_json::Value;
 
 fn cuo(s : &str) -> Error {
     Error::new(std::io::ErrorKind::Other,s)
 }
 
-#[derive(Hash,PartialEq,Eq)]
+#[derive(Hash,PartialEq,Eq,Clone)]
 pub enum Wordclass { N, V, M, P, }
 
-#[derive(PartialEq,Eq)]
+#[derive(PartialEq,Eq,Clone)]
 pub struct Attribute {
     name: String,
     form: String,
@@ -18,6 +18,12 @@ pub struct Attribute {
 
 pub trait Affect {
     fn can_affect(&self, c : Wordclass) -> bool;
+}
+
+impl Display for Attribute {
+    fn fmt(&self, f : &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.name)
+    }
 }
 
 impl Affect for Attribute {
@@ -33,7 +39,7 @@ pub enum Word<Attr> {
     Particle(String,String,Vec<Attr>),
 }
 
-pub fn add_attr<Attr : Eq+Affect>(w : Word<Attr>, a : Attr) -> Word<Attr> {
+pub fn add_attr<Attr : Clone+Eq+Affect+Display>(w : Word<Attr>, a : Attr) -> Word<Attr> {
     match w {
         Word::Noun(root,gloss,mut xs) => {
             if a.can_affect(Wordclass::N) { xs.push(a); }
@@ -41,7 +47,7 @@ pub fn add_attr<Attr : Eq+Affect>(w : Word<Attr>, a : Attr) -> Word<Attr> {
         },
         Word::Verb(root,gloss,mut xs) => {
             if a.can_affect(Wordclass::V) { xs.push(a); }
-            Word::Noun(root,gloss,xs)
+            Word::Verb(root,gloss,xs)
         },
         Word::Modifier(root,gloss,mut xs) => {
             if a.can_affect(Wordclass::M) { xs.push(a); }
@@ -55,8 +61,7 @@ pub fn add_attr<Attr : Eq+Affect>(w : Word<Attr>, a : Attr) -> Word<Attr> {
 }
 
 pub fn get_word<'a>(s : &'a String, json : &Value) -> Result<Word<Attribute>> {
-    let root = String::from(s);
-    let wordinfo = &json["vocab"][s.clone()];
+    let root = String::from(s); let wordinfo = &json["vocab"][s.clone()];
     match wordinfo {
         Value::Null => {return Err(cuo("Word not found!"));}
         _ => ()
@@ -74,7 +79,7 @@ pub fn get_word<'a>(s : &'a String, json : &Value) -> Result<Word<Attribute>> {
 pub fn get_attr(name : String, json : &Value) -> Result<Attribute> {
     let attrinfo = &json["attributes"][name.clone()];
     match attrinfo {
-        Value::Null => {return Err(cuo("Word not found!"));}
+        Value::Null => {return Ok(null_attr(name));}
         _ => ()
     }
     let form = String::from(Option::unwrap(attrinfo["form"].as_str()));
@@ -97,6 +102,17 @@ pub fn get_attr(name : String, json : &Value) -> Result<Attribute> {
     Ok(Attribute {name,form,place,affects})
 }
 
+pub fn null_attr(name : String) -> Attribute {
+    let form = String::from("");
+    let place = 0.cmp(&0);
+    let mut affects = HashSet::new();
+    affects.insert(Wordclass::N);
+    affects.insert(Wordclass::V);
+    affects.insert(Wordclass::M);
+    affects.insert(Wordclass::P);
+    Attribute {name,form,place,affects}
+}
+
 pub fn inflect(w : &Word<Attribute>) -> String {
     let (root,xs) = match &w {
         Word::Noun(root,_,xs) => (root,xs),
@@ -107,8 +123,8 @@ pub fn inflect(w : &Word<Attribute>) -> String {
     let mut out = String::from(root);
     for attr in xs {
         match attr.place {
-            Ordering::Greater => out = out + &attr.form.clone(),
-            Ordering::Less => out = attr.form.clone() + &out,
+            Ordering::Greater => out = out + "-" + &attr.form.clone(),
+            Ordering::Less => out = attr.form.clone() + "-" + &out,
             Ordering::Equal => ()
         }
     }
@@ -127,7 +143,7 @@ pub fn gloss(w : &Word<Attribute>) -> String {
         match attr.place {
             Ordering::Greater => out = out + "-" + &attr.name.clone(),
             Ordering::Less => out = attr.name.clone() + "-" + &out,
-            Ordering::Equal => ()
+            Ordering::Equal => out = String::from("[") + &attr.name.clone() + "]" + &out,
         }
     }
     out
