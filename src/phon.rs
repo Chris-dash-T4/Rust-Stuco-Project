@@ -141,6 +141,9 @@ pub fn to_orthography(token : String, sc : &Value, cats : &Value, verbose : bool
         },
         _ => (),
     }
+    // SC rules are generally of the form x->y/L_R(/NL_NR)
+    // which can be read as ``x becomes y between L and R (except between NL and NR)''
+    // all of these are regular expressions except y, which is just a String
     for rule_str in rules {
         let mut rule_coll = rule_str.unwrap().split("/");
         let change : Vec<&str> = rule_coll.next().unwrap().split("->").collect();

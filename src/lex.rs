@@ -63,7 +63,7 @@ pub fn add_attr<Attr : Clone+Eq+Affect+Display>(w : Word<Attr>, a : Attr) -> Wor
 pub fn get_word<'a>(s : &'a String, json : &Value) -> Result<Word<Attribute>> {
     let root = String::from(s); let wordinfo = &json["vocab"][s.clone()];
     match wordinfo {
-        Value::Null => {return Err(cuo("Word not found!"));}
+        Value::Null => {return Err(cuo(&format!("Word not found: «{}»!",&s.as_str())));}
         _ => ()
     }
     let gloss = String::from(Option::unwrap(wordinfo["gloss"].as_str()));
