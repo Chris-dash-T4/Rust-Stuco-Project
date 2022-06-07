@@ -76,6 +76,8 @@ pub fn get_word<'a>(s : &'a String, json : &Value) -> Result<Word<Attribute>> {
     }
 }
 
+// TODO add functions for compouding, derivation, and metalang->conlang lookups
+
 pub fn get_attr(name : String, json : &Value) -> Result<Attribute> {
     let attrinfo = &json["attributes"][name.clone()];
     match attrinfo {

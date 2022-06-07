@@ -160,6 +160,8 @@ pub fn to_orthography(token : String, sc : &Value, cats : &Value, verbose : bool
             pos_env: (Regex::new(pos[0]).unwrap(),Regex::new(pos[1]).unwrap()),
             neg_env: (Regex::new(neg[0]).unwrap(),Regex::new(neg[1]).unwrap()),
         };
+        // TODO replace 'important' digraphs with special characters
+        // private use characters in either the BMP or unicode plane 15 should do the trick
         s0 = sca(&s0,from_cats(rule0,&cat_vec),verbose);
     }
     s0
