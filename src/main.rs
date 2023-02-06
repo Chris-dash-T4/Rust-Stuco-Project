@@ -2,7 +2,7 @@ use std::{io::Result, /*io::prelude::*,*/ io::BufReader, fs::File, path::PathBuf
 use fltk::{app, button::Button, frame::Frame, prelude::*, window::Window, input::Input, };
 use fltk_table::{SmartTable, TableOpts};
 //use arboard::Clipboard;
-use serde_json::Value;
+use serde_json::{Value,json};
 use clap::Parser;
 use rfd::FileDialog;
 mod lex;
@@ -71,9 +71,9 @@ fn get_gloss_info(toks: &Vec<String>, json: &Value, verbose: bool) -> Result<Glo
     let mut glosses = Vec::new();
     for w in &ws {
         inflections.push(lex::inflect(w));
-        let orth = phon::to_orthography(inflections[inflections.len()-1].clone(),&json["sc"],&json["cats"],verbose);
+        let orth = phon::to_orthography(inflections[inflections.len()-1].clone(),&json["sc"],&json["cats"],&json["multigraphs"],verbose);
         orthographic.push(orth);
-        phonetic.push(phon::to_orthography(orthographic[orthographic.len()-1].clone(),&json["phonetic"],&json["cats"],verbose));
+        phonetic.push(phon::to_orthography(orthographic[orthographic.len()-1].clone(),&json["phonetic"],&json["cats"],&json!(null),verbose));
         glosses.push(lex::gloss(w));
     }
     let len = (&glosses).len();
@@ -111,6 +111,7 @@ fn main() -> Result<()> {
         table.end();
         wind.end();
 
+        // TODO populate with actual data
         let stats = format!("File: {}\n{} lexemes, {} attributes.\n{} sound change rules.",
                             path.as_path().file_name().unwrap().to_str().unwrap(),
                             69,69,69);

@@ -1,5 +1,8 @@
-use std::{cmp::Ordering,io::Result,io::Error,collections::hash_set::HashSet,fmt::Display};
+use std::{cmp::Ordering,io::Result,io::Error,collections::HashSet,collections::HashMap,fmt::Display};
 use serde_json::Value;
+use regex::Regex;
+
+// static mut lookups : Option<HashMap<String,&String>> = None;
 
 fn cuo(s : &str) -> Error {
     Error::new(std::io::ErrorKind::Other,s)
@@ -61,9 +64,19 @@ pub fn add_attr<Attr : Clone+Eq+Affect+Display>(w : Word<Attr>, a : Attr) -> Wor
 }
 
 pub fn get_word<'a>(s : &'a String, json : &Value) -> Result<Word<Attribute>> {
-    let root = String::from(s); let wordinfo = &json["vocab"][s.clone()];
+    let root = String::from(s);
+    let wordinfo = &json["vocab"][s.clone()];
     match wordinfo {
-        Value::Null => {return Err(cuo(&format!("Word not found: «{}»!",&s.as_str())));}
+        Value::Null => {
+            let lookup = Regex::new(r"^\{(.*)\}$").unwrap();
+            return match lookup.captures(&s.as_str()) {
+                None => Err(cuo(&format!("Word not found: «{}»!",&s.as_str()))),
+                Some(m) => {
+                    let res = _naive_lookup(String::from(&m[1]),&json)?;
+                    get_word(res, json)
+                }
+            }
+        }
         _ => ()
     }
     let gloss = String::from(Option::unwrap(wordinfo["gloss"].as_str()));
@@ -77,6 +90,41 @@ pub fn get_word<'a>(s : &'a String, json : &Value) -> Result<Word<Attribute>> {
 }
 
 // TODO add functions for compouding, derivation, and metalang->conlang lookups
+fn _naive_lookup(term : String, json : &Value) -> Result<&String> {
+    let mut table = HashMap::new();
+    let entry_iter = match &json["vocab"] {
+        Value::Object(o) => o.iter(),
+        _ => return Err(cuo("Unparseable JSON!")),
+    };
+    for (word,entry) in entry_iter {
+        let gloss = String::from(Option::unwrap(entry["gloss"].as_str()));
+        assert!(!table.contains_key(&gloss));
+        table.insert(gloss,word);
+    }
+    //lookups = Some(table);
+    if !table.contains_key(&term) { return Err(cuo("nope")); }
+    let translation = table.get(&term).unwrap();
+    Ok(translation)
+    /*
+    match lookups {
+        None => {
+            let table = HashMap::new();
+            let entry_iter = match json["vocab"] {
+                Value::Object(o) => o.iter(),
+                _ => return Err(cuo("Unparseable JSON!")),
+            };
+            for (word,entry) in entry_iter {
+                let gloss = String::from(Option::unwrap(entry["gloss"].as_str()));
+                assert!(!table.contains_key(&gloss));
+                table.insert(gloss,word);
+            }
+            lookups = Some(table);
+            Ok(table.get(&term).unwrap())
+        },
+        Some(table) => Ok(table.get(&term).unwrap()),
+    }
+    */
+}
 
 pub fn get_attr(name : String, json : &Value) -> Result<Attribute> {
     let attrinfo = &json["attributes"][name.clone()];

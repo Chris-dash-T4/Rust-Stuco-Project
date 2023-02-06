@@ -17,7 +17,7 @@ struct SCRule {
     neg_env:(Regex,Regex),
 }
 
-fn from_cats(rule : SCRule, cats : &Vec<Category>) -> SCRule {
+fn from_cats(rule : SCRule, cats : &Vec<Category>, multigraphs : &Vec<Regex>, verb : bool) -> SCRule {
     let mut rule_new = rule;
     for cat in cats {
         let get = Regex::new(&cat.id).unwrap();
@@ -36,6 +36,26 @@ fn from_cats(rule : SCRule, cats : &Vec<Category>) -> SCRule {
         rule_new.neg_env.1 = Regex::new(&neg_r_repl).unwrap();
         let target_repl = get.replace_all(rule_new.target.as_str(),&seqs);
         rule_new.target = Regex::new(&target_repl).unwrap();
+    }
+    let mut unigraph = '\u{E000}';
+    for multigraph in multigraphs {
+        let mut seq = String::new();
+        seq.push(unigraph);
+        let pos_l_repl = multigraph.replace_all(rule_new.pos_env.0.as_str(),&seq);
+        rule_new.pos_env.0 = Regex::new(&pos_l_repl).unwrap();
+        let pos_r_repl = multigraph.replace_all(rule_new.pos_env.1.as_str(),&seq);
+        rule_new.pos_env.1 = Regex::new(&pos_r_repl).unwrap();
+        let neg_l_repl = multigraph.replace_all(rule_new.neg_env.0.as_str(),&seq);
+        rule_new.neg_env.0 = Regex::new(&neg_l_repl).unwrap();
+        let neg_r_repl = multigraph.replace_all(rule_new.neg_env.1.as_str(),&seq);
+        rule_new.neg_env.1 = Regex::new(&neg_r_repl).unwrap();
+        let target_repl = multigraph.replace_all(rule_new.target.as_str(),&seq);
+        rule_new.target = Regex::new(&target_repl).unwrap();
+        let repstr_repl = multigraph.replace_all(&rule_new.replacement,&seq);
+        rule_new.replacement = String::from(repstr_repl);
+        // For now, we will naively assume there are fewer than 6400 elements in this list.
+        if verb { println!("Multigraph «{}» mapped to '{}' U+{:x}",multigraph.as_str(),&seq,unigraph as u32); }
+        unigraph = char::from_u32((unigraph as u32) + 1).unwrap();
     }
     rule_new
 }
@@ -116,11 +136,16 @@ fn sca(token : &str, rule : SCRule, verb : bool) -> String {
     out + &prev
 }
 
-pub fn to_orthography(token : String, sc : &Value, cats : &Value, verbose : bool) -> String {
+pub fn to_orthography(token : String, sc : &Value, cats : &Value, multigraphs : &Value, verbose : bool) -> String {
     let mut s0 = String::from(&token);
     let rules =
         match sc {
             Value::Array(rs) => rs.iter().map(|s| s.as_str()).collect(),
+            _ => Vec::<_>::new(),
+        };
+    let mg_rep =
+        match multigraphs {
+            Value::Array(ms) => ms.iter().map(|mg| Regex::new(mg.as_str().unwrap()).unwrap()).collect(),
             _ => Vec::<_>::new(),
         };
     let mut cat_vec : Vec<Category> = Vec::new();
@@ -160,9 +185,24 @@ pub fn to_orthography(token : String, sc : &Value, cats : &Value, verbose : bool
             pos_env: (Regex::new(pos[0]).unwrap(),Regex::new(pos[1]).unwrap()),
             neg_env: (Regex::new(neg[0]).unwrap(),Regex::new(neg[1]).unwrap()),
         };
-        // TODO replace 'important' digraphs with special characters
-        // private use characters in either the BMP or unicode plane 15 should do the trick
-        s0 = sca(&s0,from_cats(rule0,&cat_vec),verbose);
+        // TODO split multigraph parser into separate function
+        // running it separately for every single rule is comically inefficient...
+        let mut unigraph = '\u{E000}';
+        for mg in &mg_rep {
+            let mut x = String::new();
+            x.push(unigraph);
+            s0 = String::from(mg.replace_all(&s0,&x));
+            unigraph = char::from_u32((unigraph as u32) + 1).unwrap();
+        }
+        s0 = sca(&s0,from_cats(rule0,&cat_vec,&mg_rep,verbose),verbose);
+        unigraph = '\u{E000}';
+        for mg in &mg_rep {
+            let mut x = String::new();
+            x.push(unigraph);
+            let r = Regex::new(&x).unwrap();
+            s0 = String::from(r.replace_all(&s0,mg.as_str()));
+            unigraph = char::from_u32((unigraph as u32) + 1).unwrap();
+        }
     }
     s0
 }
