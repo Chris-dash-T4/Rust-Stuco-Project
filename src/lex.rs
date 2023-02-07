@@ -9,7 +9,13 @@ fn cuo(s : &str) -> Error {
 }
 
 #[derive(Hash,PartialEq,Eq,Clone)]
-pub enum Wordclass { N, V, M, P, }
+pub enum DefaultWordclass { N, V, M, P, }
+
+#[derive(Hash,PartialEq,Eq,Clone)]
+pub enum Wordclass {
+    Default(DefaultWordclass),
+    Custom(u32), // this should probably be more than fine for now
+}
 
 #[derive(PartialEq,Eq,Clone)]
 pub struct Attribute {
@@ -35,58 +41,56 @@ impl Affect for Attribute {
     }
 }
 
-pub enum Word<Attr> {
-    Noun(String,String,Vec<Attr>),
-    Verb(String,String,Vec<Attr>),
-    Modifier(String,String,Vec<Attr>),
-    Particle(String,String,Vec<Attr>),
+#[derive(Hash,PartialEq,Eq,Clone)]
+pub struct Word<Attr> {
+    lemma : String,
+    gloss : String,
+    class : Wordclass,
+    subclass : (), // idk might implement later
+    attributes : Vec<Attr>
+}
+
+// Both of these are the same type, but one is for native words, the other is for translation/metalang lookups
+pub struct LookupTable<'a> {
+    lang : Option<HashMap<String,&'a Word<Attribute>>>,
+    txln : Option<HashMap<String,&'a Word<Attribute>>>,
 }
 
 pub fn add_attr<Attr : Clone+Eq+Affect+Display>(w : Word<Attr>, a : Attr) -> Word<Attr> {
-    match w {
-        Word::Noun(root,gloss,mut xs) => {
-            if a.can_affect(Wordclass::N) { xs.push(a); }
-            Word::Noun(root,gloss,xs)
-        },
-        Word::Verb(root,gloss,mut xs) => {
-            if a.can_affect(Wordclass::V) { xs.push(a); }
-            Word::Verb(root,gloss,xs)
-        },
-        Word::Modifier(root,gloss,mut xs) => {
-            if a.can_affect(Wordclass::M) { xs.push(a); }
-            Word::Modifier(root,gloss,xs)
-        },
-        Word::Particle(root,gloss,mut xs) => {
-            if a.can_affect(Wordclass::P) { xs.push(a); }
-            Word::Particle(root,gloss,xs)
-        },
-    }
+    let Word {lemma, gloss, class, subclass, mut attributes} = w;
+    if a.can_affect(class.clone()) { attributes.push(a); }
+    Word {lemma, gloss, class, subclass, attributes}
 }
 
 pub fn get_word<'a>(s : &'a String, json : &Value) -> Result<Word<Attribute>> {
-    let root = String::from(s);
+    let lemma = String::from(s);
     let wordinfo = &json["vocab"][s.clone()];
     match wordinfo {
         Value::Null => {
+            /*
+            // TODO
             let lookup = Regex::new(r"^\{(.*)\}$").unwrap();
             return match lookup.captures(&s.as_str()) {
                 None => Err(cuo(&format!("Word not found: «{}»!",&s.as_str()))),
                 Some(m) => {
                     let res = _naive_lookup(String::from(&m[1]),&json)?;
-                    get_word(res, json)
+                    _get_word_(res, json)
                 }
             }
+            */
+            ()
         }
         _ => ()
     }
     let gloss = String::from(Option::unwrap(wordinfo["gloss"].as_str()));
-    match wordinfo["class"].as_str() {
-        Some("N") => Ok(Word::Noun(root,gloss,Vec::new())),
-        Some("V") => Ok(Word::Verb(root,gloss,Vec::new())),
-        Some("M") => Ok(Word::Modifier(root,gloss,Vec::new())),
-        Some("P") => Ok(Word::Particle(root,gloss,Vec::new())),
-        _ => Err(cuo("Unrecognized word class!"))
-    }
+    let class = match wordinfo["class"].as_str() {
+        Some("N") => Ok(Wordclass::Default(DefaultWordclass::N)),
+        Some("V") => Ok(Wordclass::Default(DefaultWordclass::V)),
+        Some("M") => Ok(Wordclass::Default(DefaultWordclass::M)),
+        Some("P") => Ok(Wordclass::Default(DefaultWordclass::P)),
+        _ => Err(cuo("Unrecognized word class!")) // TODO check for custom class definitions
+    }?;
+    Ok(Word {lemma, gloss, class, subclass : (), attributes : Vec::new()})
 }
 
 // TODO add functions for compouding, derivation, and metalang->conlang lookups
@@ -139,10 +143,10 @@ pub fn get_attr(name : String, json : &Value) -> Result<Attribute> {
         Value::Array(cs) => {
             for c in cs {
                 match c.as_str() {
-                    Some("N") => { affects.insert(Wordclass::N); },
-                    Some("V") => { affects.insert(Wordclass::V); },
-                    Some("M") => { affects.insert(Wordclass::M); },
-                    Some("P") => { affects.insert(Wordclass::P); },
+                    Some("N") => { affects.insert(Wordclass::Default(DefaultWordclass::N)); },
+                    Some("V") => { affects.insert(Wordclass::Default(DefaultWordclass::V)); },
+                    Some("M") => { affects.insert(Wordclass::Default(DefaultWordclass::M)); },
+                    Some("P") => { affects.insert(Wordclass::Default(DefaultWordclass::P)); },
                     _ => { return Err(cuo("Unrecognized word class!")); }
                 }
             }
@@ -156,20 +160,15 @@ pub fn null_attr(name : String) -> Attribute {
     let form = String::from("");
     let place = 0.cmp(&0);
     let mut affects = HashSet::new();
-    affects.insert(Wordclass::N);
-    affects.insert(Wordclass::V);
-    affects.insert(Wordclass::M);
-    affects.insert(Wordclass::P);
+    affects.insert(Wordclass::Default(DefaultWordclass::N));
+    affects.insert(Wordclass::Default(DefaultWordclass::V));
+    affects.insert(Wordclass::Default(DefaultWordclass::M));
+    affects.insert(Wordclass::Default(DefaultWordclass::P));
     Attribute {name,form,place,affects}
 }
 
 pub fn inflect(w : &Word<Attribute>) -> String {
-    let (root,xs) = match &w {
-        Word::Noun(root,_,xs) => (root,xs),
-        Word::Verb(root,_,xs) => (root,xs),
-        Word::Modifier(root,_,xs) => (root,xs),
-        Word::Particle(root,_,xs) => (root,xs),
-    };
+    let (root,xs) = (&(w.lemma), &(w.attributes));
     let mut out = String::from(root);
     for attr in xs {
         match attr.place {
@@ -182,12 +181,7 @@ pub fn inflect(w : &Word<Attribute>) -> String {
 }
 
 pub fn gloss(w : &Word<Attribute>) -> String {
-    let (gloss,xs) = match &w {
-        Word::Noun(_,gloss,xs) => (gloss,xs),
-        Word::Verb(_,gloss,xs) => (gloss,xs),
-        Word::Modifier(_,gloss,xs) => (gloss,xs),
-        Word::Particle(_,gloss,xs) => (gloss,xs),
-    };
+    let (gloss,xs) = (&(w.gloss), &(w.attributes));
     let mut out = String::from(gloss);
     for attr in xs {
         match attr.place {

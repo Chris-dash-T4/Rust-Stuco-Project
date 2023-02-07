@@ -35,23 +35,6 @@ struct GlossTable {
     len: usize
 }
 
-/*
-fn start_gui(frame : &mut Frame) -> Result<()> {
-    let f = File::open("sample.txt")?;
-    let mut reader = BufReader::new(f);
-    let mut buffer = String::new();
-    let _ = reader.read_line(&mut buffer)?;
-    frame.set_label(&buffer);
-    let mut clipboard = Clipboard::new().unwrap();
-    clipboard.set_text(buffer.into()).unwrap();
-    let f2 = File::open("out.json")?;
-    let reader2 = BufReader::new(f2);
-    let v : Value = serde_json::from_reader(reader2)?;
-    println!("{}",v[0]["word"]);
-    Ok(())
-}
-*/
-
 fn get_gloss_info(toks: &Vec<String>, json: &Value, verbose: bool) -> Result<GlossTable> {
     let mut ws : Vec<lex::Word<_>> = Vec::new();
     for s in toks {
@@ -80,10 +63,65 @@ fn get_gloss_info(toks: &Vec<String>, json: &Value, verbose: bool) -> Result<Glo
     Ok(GlossTable { inflections, orthographic, phonetic, glosses, len })
 }
 
+fn start_gui(path : PathBuf, json : Value, verbose : bool) -> Result<()> {
+    let app = app::App::default();
+    let mut wind = Window::new(100, 100, 600, 300, "Hello from rust");
+    let _frame = Frame::new(20, 0, 400, 50, "Enter gloss string:");
+    let text = Input::new(20, 50, 360, 30, "");
+    let mut stat_frame = Frame::new(400, 0, 200, 180, "");
+    let mut gb = Button::new(460, 190, 80, 30, "Get Gloss");
+    let _cb = Button::new(460, 240, 80, 30, "Copy Output");
+    let mut table = SmartTable::default().with_size(380,180).with_pos(10,100)
+                .with_opts(TableOpts {
+                    rows: 4,
+                    cols: 0,
+                    editable: true,
+                    ..Default::default()
+                });
+    table.end();
+    wind.end();
+
+    // TODO populate with actual data
+    let stats = format!("File: {}\n{} lexemes, {} attributes.\n{} sound change rules.",
+                        path.as_path().file_name().unwrap().to_str().unwrap(),
+                        69,69,69);
+    stat_frame.set_label(stats.as_str());
+
+    wind.show();
+    gb.set_callback(move |_| {
+        let raw = &text.value();
+        let split = raw.split(" ").map(|s| String::from(s)).collect();
+        match get_gloss_info(&split, &json, verbose) {
+            Err(e) => { 
+                eprintln!("You done fucked up!\n{:?}",e);
+                table.set_label("We do a little trolling.");
+            },
+            Ok(gt) => {
+                table.set_opts(TableOpts {
+                    rows: 4,
+                    cols: gt.len as i32,
+                    editable: true,
+                    ..Default::default()
+                });
+                for i in 0..(gt.len) {
+                    let j = i as i32;
+                    table.set_cell_value(0, j, &gt.orthographic[i]);
+                    table.set_cell_value(1, j, &gt.phonetic[i]);
+                    table.set_cell_value(2, j, &gt.inflections[i]);
+                    table.set_cell_value(3, j, &gt.glosses[i]);
+                }
+                table.set_label("We engage in a nontrivial quantity of shenanigans.");
+            },
+        }
+    });
+    app.run().unwrap();
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args = Cli::parse();
     let raw_args : Vec<_> = std::env::args().collect();
-    let path = match args.file {
+    let path : PathBuf = match args.file {
         Some(f) => f,
         None => {
             FileDialog::new().add_filter("JSON files",&["json"]).pick_file().unwrap()
@@ -94,58 +132,7 @@ fn main() -> Result<()> {
     let json : Value = serde_json::from_reader(reader2)?;
 
     if args.graphical || (raw_args.len() <= 1) {
-        let app = app::App::default();
-        let mut wind = Window::new(100, 100, 600, 300, "Hello from rust");
-        let _frame = Frame::new(20, 0, 400, 50, "Enter gloss string:");
-        let text = Input::new(20, 50, 360, 30, "");
-        let mut stat_frame = Frame::new(400, 0, 200, 180, "");
-        let mut gb = Button::new(460, 190, 80, 30, "Get Gloss");
-        let _cb = Button::new(460, 240, 80, 30, "Copy Output");
-        let mut table = SmartTable::default().with_size(380,180).with_pos(10,100)
-                    .with_opts(TableOpts {
-                        rows: 4,
-                        cols: 0,
-                        editable: true,
-                        ..Default::default()
-                    });
-        table.end();
-        wind.end();
-
-        // TODO populate with actual data
-        let stats = format!("File: {}\n{} lexemes, {} attributes.\n{} sound change rules.",
-                            path.as_path().file_name().unwrap().to_str().unwrap(),
-                            69,69,69);
-        stat_frame.set_label(stats.as_str());
-
-        wind.show();
-        gb.set_callback(move |_| {
-            let raw = &text.value();
-            let split = raw.split(" ").map(|s| String::from(s)).collect();
-            match get_gloss_info(&split, &json, args.verbose) {
-                Err(e) => { 
-                    eprintln!("You done fucked up!\n{:?}",e);
-                    table.set_label("We do a little trolling.");
-                },
-                Ok(gt) => {
-                    table.set_opts(TableOpts {
-                        rows: 4,
-                        cols: gt.len as i32,
-                        editable: true,
-                        ..Default::default()
-                    });
-                    for i in 0..(gt.len) {
-                        let j = i as i32;
-                        table.set_cell_value(0, j, &gt.orthographic[i]);
-                        table.set_cell_value(1, j, &gt.phonetic[i]);
-                        table.set_cell_value(2, j, &gt.inflections[i]);
-                        table.set_cell_value(3, j, &gt.glosses[i]);
-                    }
-                    table.set_label("We engage in a nontrivial quantity of shenanigans.");
-                },
-            }
-        });
-        app.run().unwrap();
-        Ok(())
+        start_gui(path,json,args.verbose)
     }
     else {
         let gt = get_gloss_info(&args.pattern, &json, args.verbose)?;
